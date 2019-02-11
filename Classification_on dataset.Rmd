@@ -1,0 +1,232 @@
+---
+title: "Run algorithm"
+author: "Sheetal Shraddha"
+date: "2/7/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(mice)
+library(DMwR)
+library(corrplot)
+library(randomForest)
+library(e1071)
+library(caret)
+library(rpart)
+library(ROSE)
+library(C50)
+library(dplyr)
+require(MASS)
+require(ggplot2)
+require(scales)
+library(class)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+df<-read.csv("subset.csv")
+df=subset(df, select = -c(X) )
+train=df[1:32550,]
+test=df[32551:43405,]
+```
+
+## Including Plots
+
+After loading the modified data which would be helpful in predicting lets look at the first basic model run which is logit model
+
+```{r pressure, echo=FALSE}
+Logit_model=glm(V65~.,family="binomial",data=train)
+#summary(Logit_model)
+logit_predict_train=predict(Logit_model,train,type='response')
+logit_predict_test=predict(Logit_model,test,type='response')
+confusionMatrix(table(as.numeric(logit_predict_train>0.5),train$V65))
+confusionMatrix(table(as.numeric(logit_predict_test>0.5),test$V65))
+```
+
+When we look at the above model the specivicity of model is very less when compared to sensitivity, so not a good model.
+
+Let run the next satistical model in list poisson
+
+```{r}
+poisson_model=glm(V65~.,family="poisson",data=train)
+#summary(poisson_model)
+poisson_predict_train=predict(poisson_model,train,type="response")
+poisson_predict_test=predict(poisson_model,test,type="response")
+confusionMatrix(table(as.numeric(poisson_predict_train>0.5),train$V65))
+confusionMatrix(table(as.numeric(poisson_predict_test>0.5),test$V65))
+```
+Again the imbalance in porportion is not helping in analysing the data and give correct prediction. lets look at the Negative binomial model
+
+```{r}
+ornregNB=glm.nb(V65~.,data=train)
+#summary(ornregNB)
+nb_predict_train=predict(ornregNB,train,type="response")
+nb_predict_test=predict(ornregNB,test,type="response")
+confusionMatrix(table(as.numeric(nb_predict_train>0.5),train$V65))
+confusionMatrix(table(as.numeric(nb_predict_test>0.5),test$V65))
+```
+
+Again the accuracy is low here too. there are couple of other model which helps in handling 0 separatly. lets see what happen in that
+```{r}
+library(pscl)
+
+Zero_infl_mod=zeroinfl(V65~.,data=train,dist = "geometric", link = "logit")
+#summary(ornregNB)
+zero_predic_train=predict(Zero_infl_mod,train,type="response")
+zero_predic_test=predict(Zero_infl_mod,test,type="response")
+confusionMatrix(table(as.numeric(zero_predic_train>0.5),train$V65))
+confusionMatrix(table(as.numeric(zero_predic_test>0.5),test$V65))
+
+```
+
+```{r}
+hurdlenegbio <- hurdle(V65 ~ ., data = train, dist = "negbin", zero = "negbin")
+#summary(hurdlenegbio)
+hurdle_predict_train=predict(hurdlenegbio,train,type="response")
+hurdle_predict_test=predict(hurdlenegbio,test,type="response")
+confusionMatrix(table(as.numeric(hurdle_predict_train>0.5),train$V65))
+confusionMatrix(table(as.numeric(hurdle_predict_test>0.5),test$V65))
+```
+
+As hurdle accuracy is also not good lets try Naive BAyers algorithm.
+```{r}
+train$V65=as.factor(train$V65)
+test$V65=as.factor(test$V65)
+
+Classify=naiveBayes(train[,1:34],train[,35],laplace=1)
+naive_predict_train<-predict(Classify, train[,1:34])
+naive_predict_test<-predict(Classify, test[,1:34])
+confusionMatrix(table(naive_predict_train,train$V65))
+confusionMatrix(table(naive_predict_test,test$V65))
+```
+Naive BAyers is also not good. Letss try LDA
+```{r}
+lda1 <- lda(V65 ~ ., data = train)
+
+lda_predict_train<-as.data.frame(predict(lda1, train[,1:34],type="response"))$class
+lda_predict_test<-as.data.frame(predict(lda1, test[,1:34],type="response"))$class
+confusionMatrix(table(lda_predict_train,train$V65))
+confusionMatrix(table(lda_predict_test,test$V65))
+```
+As the lda failed so we tried Decision tree
+```{r}
+
+c5_rules <- C5.0(V65 ~ V1+V2+V4+V5+V7+V8+V9+V10+V12+V13+V15+V17+V21+V27+V28+V29+V30+V32+V33+V37+V39+V40+V41
+                 +V42+V47+V52+V53+V54+V55+V57+V59+V60+V61 , train)
+dt_predict_train<-predict(c5_rules, train[,1:34])
+dt_predict_test<-predict(c5_rules, test[,1:34])
+confusionMatrix(table(dt_predict_train,train$V65))
+confusionMatrix(table(dt_predict_test,test$V65))
+```
+
+Decision tree also dint give good accuracy , in KNN
+```{r}
+
+accuracy_test<-list()
+
+true_positive<-list()
+true_negative<-list()
+false_positive<-list()
+false_negative<-list()
+j=1
+for (i in 1:21)
+{
+#print("1")
+test["predicted"] = knn(train = train[,1:34], test = test[,1:34], cl = train[,35], k=i)
+
+
+test1<-confusionMatrix(table(test$predicted,test$V65))
+
+#print(test1$table)
+
+Z<-test1$table
+true_positive[j]<-Z[1]
+true_negative[j]<-Z[2]
+false_positive[j]<-Z[3]
+false_negative[j]<-Z[4]
+test=subset(test, select = -c(predicted) )
+j=j+1
+i=i+1
+#print(Z[1])
+}
+```
+
+```{r}
+Z<-test1$table
+Z[1]
+Z[2]
+Z[3]
+Z[4]
+```
+
+```{r}
+true_positive<-as.data.frame(unlist(true_positive))
+colnames(true_positive)[1] <- "true_positive"
+true_negative<-as.data.frame(unlist(true_negative))
+colnames(true_negative)[1] <- "true_negative"
+false_positive<-as.data.frame(unlist(false_positive))
+colnames(false_positive)[1] <- "false_positive"
+false_negative<-as.data.frame(unlist(false_negative))
+colnames(false_negative)[1] <- "false_negative"
+K<-seq(1,21)
+K<-as.data.frame(unlist(K))
+colnames(K)[1] <- "K"
+Dt_accuracy<-cbind(K,true_positive,true_negative,false_positive,false_negative)
+```
+Above is the KNN confusion table which again is not good. lets try SVM
+```{r}
+svmfit = svm(V65 ~ ., data = train, kernel = "sigmoid", cost = 10, scale = FALSE)
+svm_predict_train<-as.data.frame(predict(svmfit, train[,1:34],type="prob"))
+svm_predict_test<-as.data.frame(predict(svmfit, test[,1:34],type="prob"))
+colnames(svm_predict_test)[1] <- "predict"
+colnames(svm_predict_train)[1] <- "predict"
+confusionMatrix(table(svm_predict_train$predict,train$V65))
+confusionMatrix(table(svm_predict_test$predict,test$V65))
+```
+as svm dint work trying randomforest 
+
+
+As th svm model is also not accuracy so i chose random forest.
+```{r}
+rfm_model = randomForest(V65 ~ ., data = train)
+rfm_predict_train<-as.data.frame(predict(rfm_model, train[,1:34],type="prob"))
+rfm_predict_test<-as.data.frame(predict(rfm_model, test[,1:34],type="prob"))
+head(rfm_predict_train)
+colnames(rfm_predict_train)[2] <- "predict"
+colnames(rfm_predict_test)[2] <- "predict"
+confusionMatrix(table(as.numeric(rfm_predict_train$predict>0.5),train$V65))
+confusionMatrix(table(as.numeric(rfm_predict_test$predict>0.5),test$V65))
+```
+
+the random forect has amazing accuracy in train dataset but its bad with test dataset.
+Let try ensemble
+```{r}
+lda1 <- lda(V65 ~ ., data = train)
+
+lda_predict_train<-as.data.frame(predict(lda1, train[,1:34],type="response"))$posterior.1
+lda_predict_test<-as.data.frame(predict(lda1, test[,1:34],type="response"))$posterior.1
+#confusionMatrix(table(train$V65,as.numeric(lda_predict_train>0.5)))
+#confusionMatrix(table(test$V65,as.numeric(lda_predict_test>0.5)))
+ensemble_predict_train <- (lda_predict_train+rfm_predict_train$predict+poisson_predict_train)/3
+ensemble_predict_test <- (lda_predict_test+rfm_predict_test$predict+poisson_predict_test)/3
+
+confusionMatrix(table(as.numeric(ensemble_predict_train>0.5),train$V65))
+confusionMatrix(table(as.numeric(ensemble_predict_test>0.5),test$V65))
+```
+```{r}
+
+dt_predict_train<-as.data.frame(predict(c5_rules, train[,1:34],type="prob"))$`1`
+dt_predict_test<-as.data.frame(predict(c5_rules, test[,1:34],type="prob"))$`1`
+
+ensemble_predict_train <- (lda_predict_train+rfm_predict_train$predict+poisson_predict_train+dt_predict_train)/4
+ensemble_predict_test <- (lda_predict_test+rfm_predict_test$predict+poisson_predict_test+dt_predict_test)/4
+
+confusionMatrix(table(as.numeric(ensemble_predict_train>0.5),train$V65))
+confusionMatrix(table(as.numeric(ensemble_predict_test>0.5),test$V65))
+```
+

@@ -1,0 +1,122 @@
+---
+title: "Final"
+author: "Sheetal"
+date: "2/4/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(stringr)
+```
+
+## R Markdown
+
+read the whole dataset by creating a loop
+
+```{r cars}
+j=1
+ for (k in list.files(path="~/Documents/practicum/data1")){
+   if(str_detect(k,".arff")){
+     
+     year_1<-read.csv(k, header=FALSE, comment.char = "@")
+     year_1["year"]=j
+     if(j==1){
+      year=year_1 
+     }
+     else{
+     year=rbind(year,year_1)
+     }
+   }
+   j=j+1
+   
+ }
+year <- year[sample(nrow(year)), ]   
+```
+
+## Including Plots
+
+Identify number of rows in each year
+
+```{r pressure, echo=FALSE}
+row<-list()
+bankrupcy<-list()
+running<-list()
+for(i in 1:6){
+
+  X<-year[year$year==i,]
+  row[i]<-nrow(X)
+  y<-table(X$V65)
+  bankrupcy[i]<-y[2]
+  running[i]<-y[1]
+  print(table(X$V65))
+}
+
+row<-as.data.frame(unlist(row))
+colnames(row)[1] <- "row"
+bankrupcy<-as.data.frame(unlist(bankrupcy))
+colnames(bankrupcy)[1] <- "bankrupcy"
+running<-as.data.frame(unlist(running))
+colnames(running)[1] <- "running"
+Final<-cbind(row,bankrupcy,running)
+
+Final
+
+
+```
+
+
+Identifying rows which might have ? in them
+
+
+```{r}
+empty_columns<-function(df){
+freq<-list()
+coln<-list()
+for( i in 1:65)
+{
+  col_name=paste0("V",i)
+  coln[i]<-(col_name)
+  
+  freq[i]=nrow(df[df[[col_name]]=="?",])
+}
+coln<-as.data.frame(unlist(coln))
+colnames(coln)[1] <- "coln"
+freq<-as.data.frame(unlist(freq))
+colnames(freq)[1] <- "freq"
+Final<-cbind(coln,freq)
+
+return(Final)
+}
+
+frequency_data<-empty_columns(year)
+frequency_data[order(-frequency_data$freq),] 
+```
+
+```{r}
+write.csv(year,"year.csv")
+```
+
+
+Downloaded the whole dataset in year excel and replace all ? with NA.
+and then ran the below code ,to centrally impute all the NA's
+
+```{r}
+
+df<- read.csv("year.csv")
+df[!is.na(df),]
+df=centralImputation(df)
+df[is.na(df),]
+```
+check t find if there is any collinerity amng the dataset
+
+
+```{r}
+cor(df$V65,df)
+```
+
+```{r}
+cat_var="class"
+num_var=setdiff(names(df),cat_var)
+corrplot(cor(df[,num_var]), method="shade",type = "full")
+```
+
